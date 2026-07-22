@@ -20,7 +20,7 @@
   "homepage": "https://github.com/grikomsn/pi-provider-poolside#readme",
   "files": [
     "src",
-    "assets",
+    "assets/cover.jpg",
     "CHANGELOG.md",
     "README.md",
     "LICENSE"
