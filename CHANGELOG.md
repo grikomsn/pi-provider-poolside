@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1
+
+### Patch Changes
+
+- 10b9c76: Exclude the repository-only icon from the npm package while retaining the cover used by the npm README and Pi package gallery.
+
 ## 0.1.0
 
 - Add a lean Poolside provider for Pi using the OpenAI-compatible chat completions API.
