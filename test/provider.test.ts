@@ -28,8 +28,11 @@ test("registers an authenticated OpenAI-compatible provider", () => {
 
 test("fallback metadata matches current documented models", () => {
   const models = new Map(FALLBACK_MODELS.map((model) => [model.id, model]));
-  assert.equal(models.get("poolside/laguna-s-2.1")?.contextWindow, 262_144);
+  assert.equal(models.get("poolside/laguna-s-2.1")?.contextWindow, 1_048_576);
+  assert.equal(models.get("poolside/laguna-s-2.1")?.maxTokens, 131_072);
   assert.equal(models.get("poolside/laguna-m.1")?.contextWindow, 262_144);
+  assert.equal(models.get("poolside/laguna-m.1")?.maxTokens, 32_768);
+  assert.equal(models.get("poolside/laguna-xs-2.1")?.contextWindow, 262_144);
   assert.equal(models.get("poolside/laguna-xs-2.1")?.maxTokens, 32_768);
   assert.deepEqual(models.get("poolside/laguna-s-2.1")?.thinkingLevelMap, {
     off: "none", minimal: null, low: null, medium: null, high: null, xhigh: null, max: "xhigh",
@@ -94,9 +97,22 @@ test("parses every model and uses live metadata", () => {
 test("keeps known metadata when /models returns the basic OpenAI shape", () => {
   const [model] = parseModelsResponse({ data: [{ id: "poolside/laguna-s-2.1" }] });
   assert.equal(model?.name, "Laguna S 2.1");
-  assert.equal(model?.contextWindow, 262_144);
+  assert.equal(model?.contextWindow, 1_048_576);
+  assert.equal(model?.maxTokens, 131_072);
   assert.equal(model?.reasoning, true);
   assert.equal(model?.cost.input, 0);
+});
+
+test("uses live serving limits when /models reports them for a known model", () => {
+  const [model] = parseModelsResponse({
+    data: [{
+      id: "poolside/laguna-s-2.1",
+      context_length: 262_144,
+      max_completion_tokens: 32_768,
+    }],
+  });
+  assert.equal(model?.contextWindow, 262_144);
+  assert.equal(model?.maxTokens, 32_768);
 });
 
 test("fetches /models with bearer authentication", async () => {
