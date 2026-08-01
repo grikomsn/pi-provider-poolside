@@ -59,11 +59,11 @@ The fallback catalog follows Poolside's [supported-models documentation](https:/
 
 | Model | Context | Max output | Input | Reasoning |
 | --- | ---: | ---: | --- | --- |
-| `poolside/laguna-s-2.1` | 262,144 | 32,768 | text | off / max |
+| `poolside/laguna-s-2.1` | 1,048,576 | 131,072 | text | off / max |
 | `poolside/laguna-m.1` | 262,144 | 32,768 | text | configurable effort |
 | `poolside/laguna-xs-2.1` | 262,144 | 32,768 | text | configurable effort |
 
-An authenticated `/models` response replaces this list, so newly released or account-specific models appear without an extension release. Poolside's richer response fields supply metadata for those models; if a deployment returns only the basic OpenAI model shape, the extension uses conservative text-model defaults until richer metadata is available. The Laguna S 2.1 weights support up to 1M context, but the hosted Poolside Platform endpoint currently advertises a 262,144-token serving limit, which is the limit used here.
+An authenticated `/models` response replaces this list, so newly released or account-specific models appear without an extension release. Poolside's richer response fields supply metadata for those models; if a deployment returns only the basic OpenAI model shape, the extension keeps the fallback metadata until richer metadata is available. When `/models` reports a live serving limit, that value takes precedence over the fallback—for example, a deployment may advertise a smaller Laguna S 2.1 context window than the 1,048,576-token catalog value.
 
 ## Development
 
