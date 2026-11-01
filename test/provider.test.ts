@@ -268,3 +268,43 @@ test("refresh rethrows when pi aborts it instead of reporting a stale catalog", 
     })));
   });
 });
+
+test("hostile persisted rows never fail registration in pi's real model runtime", async () => {
+  const { ModelRuntime } = await import("@earendil-works/pi-coding-agent");
+  const good = { id: "poolside/good", contextWindow: 262_144, maxTokens: 32_768 };
+  const rows = [
+    good,
+    { id: "poolside/null-api", api: null },
+    { id: "poolside/null-base", baseUrl: null },
+    { id: "poolside/empty-api", api: "" },
+    { id: "poolside/numeric-api", api: 7 },
+    { id: "poolside/empty-base", baseUrl: "" },
+    { id: "poolside/numeric-base", baseUrl: 7 },
+    { id: "poolside/zero-context", contextWindow: 0 },
+    { id: "poolside/image", type: "image" },
+    { name: "no id" },
+  ];
+  await withAgentDir({ poolside: { models: rows, checkedAt: 1 } }, async () => {
+    const dir = process.env.PI_CODING_AGENT_DIR!;
+    const runtime = await ModelRuntime.create({
+      authPath: `${dir}/auth.json`,
+      modelsPath: `${dir}/models.json`,
+      modelsStorePath: `${dir}/models-store.json`,
+    });
+    // pi's real registerProvider runs validateExtensionProvider and composes
+    // the provider; a throw here would fail the whole extension load.
+    assert.doesNotThrow(() => poolsideProvider({
+      registerProvider: (name: string, config: ProviderConfig) => runtime.registerProvider(name, config),
+    } as unknown as ExtensionAPI));
+    const ids = runtime.getAllModels().filter((model) => model.provider === "poolside").map((model) => model.id);
+    assert.deepEqual(ids.sort(), ["poolside/good", "poolside/null-api", "poolside/null-base"]);
+    for (const id of ids) {
+      const model = runtime.getModel("poolside", id);
+      assert.equal(model?.api, "openai-completions");
+      assert.equal(model?.baseUrl, POOLSIDE_BASE_URL);
+    }
+    // Let the cache-only refresh pi schedules on registration settle before the
+    // agent directory is removed.
+    await runtime.refresh({ allowNetwork: false });
+  });
+});

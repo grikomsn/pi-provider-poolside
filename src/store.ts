@@ -28,13 +28,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isOptionalNonEmptyString(value: unknown): boolean {
+  return value === undefined || value === null || (typeof value === "string" && value.length > 0);
+}
+
 function isUsableRow(row: unknown, requireBaseUrl: boolean): row is ChatModelConfig {
   if (!isRecord(row)) return false;
   if (typeof row.id !== "string" || row.id.trim().length === 0) return false;
   if (row.type !== undefined && row.type !== "chat") return false;
-  // A present-but-unusable baseUrl would override the provider-level one.
-  if (row.baseUrl !== undefined && (typeof row.baseUrl !== "string" || row.baseUrl.length === 0)) return false;
-  if (requireBaseUrl && row.baseUrl === undefined) return false;
+  // pi resolves `row.x ?? provider.x`: null/undefined fall back to the
+  // provider value, but any other non-string (or "") would win and either
+  // throw at registration (`api`: `no "api" specified`, failing the whole
+  // extension load) or shadow the provider's endpoint (`baseUrl`).
+  if (!isOptionalNonEmptyString(row.api) || !isOptionalNonEmptyString(row.baseUrl)) return false;
+  if (requireBaseUrl && row.baseUrl == null) return false;
   // pi validates these at registration; a corrupt row must not fail the load.
   for (const key of ["contextWindow", "maxTokens"] as const) {
     if (row[key] !== undefined && !(typeof row[key] === "number" && Number.isFinite(row[key]) && row[key] > 0)) {

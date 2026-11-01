@@ -79,17 +79,32 @@ test("keeps only chat rows", async () => {
 
 test("baseUrl is optional unless the provider requires it per row", async () => {
   const withBase = { ...row, id: "poolside/with-base", baseUrl: "https://inference.poolside.ai/v1" };
+  const nullBase = { ...row, id: "poolside/null-base", baseUrl: null };
   const badBase = { ...row, id: "poolside/bad-base", baseUrl: 7 };
   const emptyBase = { ...row, id: "poolside/empty-base", baseUrl: "" };
-  await withAgentDir({ poolside: { models: [row, withBase, badBase, emptyBase] } }, () => {
-    // A present-but-unusable baseUrl would shadow the provider-level one, so it is always dropped.
+  await withAgentDir({ poolside: { models: [row, withBase, nullBase, badBase, emptyBase] } }, () => {
+    // null falls back to the provider-level baseUrl in pi; a present-but-unusable
+    // value would shadow it, so it is dropped.
     assert.deepEqual(
       readPersistedProviderModels("poolside", { requireBaseUrl: false }).map((model) => model.id),
-      [row.id, withBase.id],
+      [row.id, withBase.id, nullBase.id],
     );
     assert.deepEqual(
       readPersistedProviderModels("poolside", { requireBaseUrl: true }).map((model) => model.id),
       [withBase.id],
+    );
+  });
+});
+
+test("drops rows whose api would not fall back to the provider api", async () => {
+  const withApi = { ...row, id: "poolside/with-api", api: "openai-completions" };
+  const nullApi = { ...row, id: "poolside/null-api", api: null };
+  const emptyApi = { ...row, id: "poolside/empty-api", api: "" };
+  const numericApi = { ...row, id: "poolside/numeric-api", api: 7 };
+  await withAgentDir({ poolside: { models: [row, withApi, nullApi, emptyApi, numericApi] } }, () => {
+    assert.deepEqual(
+      readPersistedProviderModels("poolside").map((model) => model.id),
+      [row.id, withApi.id, nullApi.id],
     );
   });
 });
