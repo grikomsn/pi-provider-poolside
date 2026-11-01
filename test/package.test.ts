@@ -13,6 +13,7 @@ test("npm package includes only the required asset", () => {
   const paths = files.map((file) => file.path);
 
   assert.ok(paths.includes("assets/cover.jpg"));
+  assert.ok(paths.includes("src/store.ts"));
   assert.ok(!paths.includes("assets/icon.png"));
   assert.ok(!paths.some((path) => path.startsWith("test/")));
   assert.ok(!paths.some((path) => path.startsWith(".github/")));

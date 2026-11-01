@@ -7,23 +7,48 @@ import poolsideProvider, {
   fetchModels,
   parseModelsResponse,
 } from "../src/index.ts";
+import { withAgentDir, withFetch } from "./helpers.ts";
 
-test("registers an authenticated OpenAI-compatible provider", () => {
-  let registration: { name: string; config: ProviderConfig } | undefined;
-  const pi = {
+type RefreshContext = Parameters<NonNullable<ProviderConfig["refreshModels"]>>[0];
+
+function register(): { name?: string; config?: ProviderConfig } {
+  const registration: { name?: string; config?: ProviderConfig } = {};
+  poolsideProvider({
     registerProvider(name: string, config: ProviderConfig) {
-      registration = { name, config };
+      registration.name = name;
+      registration.config = config;
     },
-  } as ExtensionAPI;
+  } as ExtensionAPI);
+  return registration;
+}
 
-  poolsideProvider(pi);
-  assert.equal(registration?.name, "poolside");
-  assert.equal(registration?.config.baseUrl, POOLSIDE_BASE_URL);
-  assert.equal(registration?.config.apiKey, "$POOLSIDE_API_KEY");
-  assert.equal(registration?.config.api, "openai-completions");
-  assert.equal(registration?.config.authHeader, true);
-  assert.equal(registration?.config.models?.length, 3);
-  assert.equal(typeof registration?.config.refreshModels, "function");
+test("registers an authenticated OpenAI-compatible provider", async () => {
+  await withAgentDir(undefined, () => {
+    const registration = register();
+    assert.equal(registration.name, "poolside");
+    assert.equal(registration.config?.baseUrl, POOLSIDE_BASE_URL);
+    assert.equal(registration.config?.apiKey, "$POOLSIDE_API_KEY");
+    assert.equal(registration.config?.api, "openai-completions");
+    assert.equal(registration.config?.authHeader, true);
+    // No persisted catalog yet: the bundled fallback is registered.
+    assert.equal(registration.config?.models, FALLBACK_MODELS);
+    assert.equal(typeof registration.config?.refreshModels, "function");
+  });
+});
+
+test("registration seeds pi's persisted catalog so a live-only default resolves at startup", async () => {
+  const live = { id: "poolside/laguna-live", name: "Laguna Live", contextWindow: 262_144, maxTokens: 32_768 };
+  await withAgentDir({ poolside: { models: [live], checkedAt: 1 }, other: { models: [{ id: "x" }] } }, () => {
+    assert.deepEqual(register().config?.models, [live]);
+  });
+});
+
+test("registration falls back to the bundled catalog when the store is unusable", async () => {
+  for (const store of ["{not json", { poolside: { models: [] } }, { poolside: { models: [{ name: "no id" }] } }]) {
+    await withAgentDir(store, () => {
+      assert.equal(register().config?.models, FALLBACK_MODELS);
+    });
+  }
 });
 
 test("fallback metadata matches current documented models", () => {
@@ -115,73 +140,131 @@ test("uses live serving limits when /models reports them for a known model", () 
   assert.equal(model?.maxTokens, 32_768);
 });
 
-test("fetches /models with bearer authentication", async () => {
-  const originalFetch = globalThis.fetch;
-  let request: { input: string; init?: RequestInit } | undefined;
-  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
-    request = { input: String(input), init };
-    return new Response(JSON.stringify({ data: [{ id: "poolside/new-model" }] }), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    });
-  }) as typeof fetch;
+const json = (body: unknown, init?: ResponseInit) => new Response(JSON.stringify(body), {
+  status: 200,
+  headers: { "content-type": "application/json" },
+  ...init,
+});
 
-  try {
+test("fetches /models with bearer authentication and refuses redirects", async () => {
+  let request: { input: string; init?: RequestInit } | undefined;
+  await withFetch((async (input: string | URL | Request, init?: RequestInit) => {
+    request = { input: String(input), init };
+    return json({ data: [{ id: "poolside/new-model" }] });
+  }) as typeof fetch, async () => {
     const models = await fetchModels("secret");
     assert.equal(request?.input, `${POOLSIDE_BASE_URL}/models`);
     assert.equal((request?.init?.headers as Record<string, string>).Authorization, "Bearer secret");
+    assert.equal(request?.init?.redirect, "error");
     assert.equal(models[0]?.id, "poolside/new-model");
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+  });
 });
 
-test("refresh publishes every discovered model and keeps the last successful catalog", async () => {
-  let config: ProviderConfig | undefined;
-  poolsideProvider({ registerProvider(_name: string, value: ProviderConfig) { config = value; } } as ExtensionAPI);
-  const refresh = config?.refreshModels;
-  assert.ok(refresh);
-
-  let entry: { models: readonly unknown[]; checkedAt?: number } | undefined;
-  const store = {
-    async read() { return entry; },
-    async write(value: typeof entry) { entry = value; },
-    async delete() { entry = undefined; },
+/** A pi ≥ 0.84 refresh context: read-only `stored` snapshot plus `publish()`, no `store`. */
+function refreshContext(overrides: Partial<RefreshContext> & { published?: unknown[] } = {}): RefreshContext {
+  const { published = [], ...rest } = overrides;
+  return {
+    allowNetwork: true,
+    signal: new AbortController().signal,
+    async publish(publication) {
+      published.push(publication);
+      return true;
+    },
+    ...rest,
   };
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () => new Response(JSON.stringify({
+}
+
+async function refreshFn(): Promise<NonNullable<ProviderConfig["refreshModels"]>> {
+  let refresh: ProviderConfig["refreshModels"];
+  await withAgentDir(undefined, () => {
+    refresh = register().config?.refreshModels;
+  });
+  assert.ok(refresh);
+  return refresh;
+}
+
+test("refresh works with pi's stored/publish context (no context.store)", async () => {
+  const refresh = await refreshFn();
+  const stored = { models: [{ id: "poolside/cached", name: "Cached" }], checkedAt: 1 };
+  let calls = 0;
+  await withFetch((async () => {
+    calls += 1;
+    return json({ data: [] });
+  }) as typeof fetch, async () => {
+    // Cache-only pass: serve the persisted catalog without touching the network.
+    const published: unknown[] = [];
+    const cached = await refresh(refreshContext({
+      allowNetwork: false,
+      credential: { type: "api_key", key: "secret" },
+      stored: stored as never,
+      published,
+    }));
+    assert.deepEqual(cached.map((model) => model.id), ["poolside/cached"]);
+    assert.equal(published.length, 0);
+    assert.equal(calls, 0);
+
+    // Corrupt persisted rows are dropped rather than handed to pi's validator.
+    const mixed = { models: [{ id: "poolside/cached" }, { name: "no id" }, { id: "poolside/bad", baseUrl: 7 }] };
+    assert.deepEqual(
+      (await refresh(refreshContext({ allowNetwork: false, stored: mixed as never }))).map((model) => model.id),
+      ["poolside/cached"],
+    );
+    assert.equal(
+      await refresh(refreshContext({ allowNetwork: false, stored: { models: [{ name: "no id" }] } as never })),
+      FALLBACK_MODELS,
+    );
+
+    // Nothing persisted yet: the bundled fallback.
+    assert.equal(await refresh(refreshContext({ allowNetwork: false })), FALLBACK_MODELS);
+  });
+});
+
+test("refresh publishes the discovered catalog and keeps the last one through failures", async () => {
+  const refresh = await refreshFn();
+  const published: Array<{ persist?: { models: Array<{ id: string }>; checkedAt?: number } }> = [];
+  const credential = { type: "api_key" as const, key: "secret" };
+
+  await withFetch((async () => json({
     data: [{ id: "poolside/account-a" }, { id: "poolside/account-b" }],
-  }), { status: 200 })) as typeof fetch;
-
-  try {
-    const discovered = await refresh({
-      allowNetwork: true,
-      credential: { type: "api_key", key: "secret" },
-      store: store as never,
-    });
+  })) as typeof fetch, async () => {
+    const discovered = await refresh(refreshContext({ credential, published }));
     assert.deepEqual(discovered.map((model) => model.id), ["poolside/account-a", "poolside/account-b"]);
-    assert.deepEqual(entry?.models.map((model) => (model as { id: string }).id), [
-      "poolside/account-a", "poolside/account-b",
-    ]);
+    assert.equal(published.length, 1);
+    assert.deepEqual(published[0]?.persist?.models.map((model) => model.id), ["poolside/account-a", "poolside/account-b"]);
+    assert.equal(typeof published[0]?.persist?.checkedAt, "number");
+  });
 
-    globalThis.fetch = (async () => new Response("unavailable", { status: 503 })) as typeof fetch;
-    const cached = await refresh({
-      allowNetwork: true,
-      credential: { type: "api_key", key: "secret" },
-      store: store as never,
-    });
-    assert.deepEqual(cached.map((model) => model.id), ["poolside/account-a", "poolside/account-b"]);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+  const stored = published[0]!.persist!;
+  await withFetch((async () => new Response("unavailable", { status: 401 })) as typeof fetch, async () => {
+    const kept = await refresh(refreshContext({ credential, stored: stored as never, published }));
+    assert.deepEqual(kept.map((model) => model.id), ["poolside/account-a", "poolside/account-b"]);
+    // A failed discovery never overwrites the persisted catalog.
+    assert.equal(published.length, 1);
+  });
 });
 
 test("refresh falls back when no resolved credential is available", async () => {
-  let config: ProviderConfig | undefined;
-  poolsideProvider({ registerProvider(_name: string, value: ProviderConfig) { config = value; } } as ExtensionAPI);
-  const refresh = config?.refreshModels;
-  assert.ok(refresh);
-  const store = { async read() { return undefined; }, async write() {}, async delete() {} };
-  const fallback = await refresh({ allowNetwork: true, store: store as never });
-  assert.equal(fallback, FALLBACK_MODELS);
+  const refresh = await refreshFn();
+  let calls = 0;
+  await withFetch((async () => {
+    calls += 1;
+    return json({ data: [] });
+  }) as typeof fetch, async () => {
+    assert.equal(await refresh(refreshContext()), FALLBACK_MODELS);
+    assert.equal(calls, 0);
+  });
+});
+
+test("refresh rethrows when pi aborts it instead of reporting a stale catalog", async () => {
+  const refresh = await refreshFn();
+  const controller = new AbortController();
+  await withFetch((async () => {
+    controller.abort(new Error("superseded"));
+    throw new DOMException("aborted", "AbortError");
+  }) as typeof fetch, async () => {
+    await assert.rejects(refresh(refreshContext({
+      credential: { type: "api_key", key: "secret" },
+      signal: controller.signal,
+    })));
+  });
 });
