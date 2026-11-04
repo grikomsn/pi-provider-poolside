@@ -33,8 +33,11 @@ export const POOLSIDE_COMPAT = {
 
 const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as const;
 
+/** Chat entries of pi's discriminated extension model config. */
+export type ChatModelConfig = Extract<ProviderModelConfig, { type?: "chat" }>;
+
 /** Current Poolside Platform models, available before authenticated refresh. */
-export const FALLBACK_MODELS: ProviderModelConfig[] = [
+export const FALLBACK_MODELS: ChatModelConfig[] = [
   {
     id: "poolside/laguna-s-2.1",
     name: "Laguna S 2.1",

@@ -41,7 +41,9 @@ pi
 
 You can instead store an API-key credential for the `poolside` provider in Pi's `auth.json` or override the provider in `models.json`.
 
-Select a model with `/model`. Refresh the remote catalog with Pi's normal model refresh/update flow (`pi update --models`). If discovery is temporarily unavailable, the extension retains the last successful catalog, or the documented Laguna S 2.1, Laguna M.1, and Laguna XS 2.1 fallbacks on first use. As with every authenticated Pi provider, models become selectable after a key is configured.
+Select a model with `/model`. Refresh the remote catalog with Pi's normal model refresh/update flow (`pi update --models`). Transient discovery failures (rate limits, gateway errors, dropped connections) are retried briefly; if discovery is still unavailable, the extension retains the last successful catalog, or the documented Laguna S 2.1, Laguna M.1, and Laguna XS 2.1 fallbacks on first use. The last discovered catalog is also registered at startup, so a saved `defaultProvider`/`defaultModel` that points at a discovered model (one outside the bundled list) is honoured in every launch, including `pi -p`. As with every authenticated Pi provider, models become selectable after a key is configured.
+
+Live discovery requires Pi 0.84 or newer (older versions keep the bundled catalog).
 
 ## Thinking effort
 

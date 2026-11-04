@@ -36,12 +36,12 @@
     "provenance": true
   },
   "scripts": {
-    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "test": "node --experimental-strip-types --no-warnings --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm test",
     "package": "npm pack --dry-run",
     "changeset": "changeset",
-    "version": "changeset version"
+    "version": "changeset version && npm install --package-lock-only --ignore-scripts"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*"
@@ -53,7 +53,7 @@
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.0",
-    "@earendil-works/pi-coding-agent": "^0.81.1",
+    "@earendil-works/pi-coding-agent": "^1.4.0",
     "@types/node": "^24.0.0",
     "typescript": "^5.9.3"
   },
