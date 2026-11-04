@@ -9,8 +9,12 @@ test("npm package includes only the required asset", () => {
     cwd: new URL("..", import.meta.url),
     encoding: "utf8",
   });
-  const [{ files }] = JSON.parse(output) as [{ files: Array<{ path: string }> }];
-  const paths = files.map((file) => file.path);
+  // npm <12 prints an array of package entries; npm 12 prints an object keyed by
+  // package name. Object.values() reads the first entry from either shape.
+  const parsed = JSON.parse(output) as Record<string, { files: Array<{ path: string }> }>;
+  const entry = Object.values(parsed)[0];
+  assert.ok(entry, "expected the package entry in npm pack output");
+  const paths = entry.files.map((file) => file.path);
 
   assert.ok(paths.includes("assets/cover.jpg"));
   assert.ok(paths.includes("src/store.ts"));
