@@ -1,6 +1,6 @@
 {
   "name": "pi-provider-poolside",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Lean Poolside AI model provider for Pi with live model discovery",
   "type": "module",
   "license": "MIT",
