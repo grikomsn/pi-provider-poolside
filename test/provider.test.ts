@@ -53,19 +53,23 @@ test("registration falls back to the bundled catalog when the store is unusable"
 
 test("fallback metadata matches current documented models", () => {
   const models = new Map(FALLBACK_MODELS.map((model) => [model.id, model]));
-  assert.equal(models.get("poolside/laguna-s-2.1")?.contextWindow, 1_048_576);
-  assert.equal(models.get("poolside/laguna-s-2.1")?.maxTokens, 131_072);
-  assert.equal(models.get("poolside/laguna-m.1")?.contextWindow, 262_144);
-  assert.equal(models.get("poolside/laguna-m.1")?.maxTokens, 32_768);
+  // Live-served limits (verified 2026-11-09): both Laguna models advertise a
+  // 262,144-token context and 32,768 max completion tokens. laguna-m.1 is
+  // not in the served catalog nor the sister bridge's bundle; live discovery
+  // still lists it for accounts that see it.
+  assert.equal(models.size, 2);
+  assert.equal(models.get("poolside/laguna-s-2.1")?.contextWindow, 262_144);
+  assert.equal(models.get("poolside/laguna-s-2.1")?.maxTokens, 32_768);
   assert.equal(models.get("poolside/laguna-xs-2.1")?.contextWindow, 262_144);
   assert.equal(models.get("poolside/laguna-xs-2.1")?.maxTokens, 32_768);
+  assert.ok(!models.has("poolside/laguna-m.1"));
   assert.deepEqual(models.get("poolside/laguna-s-2.1")?.thinkingLevelMap, {
     off: "none", minimal: null, low: null, medium: null, high: null, xhigh: null, max: "xhigh",
   });
-  assert.deepEqual(models.get("poolside/laguna-m.1")?.thinkingLevelMap, {
+  assert.deepEqual(models.get("poolside/laguna-xs-2.1")?.thinkingLevelMap, {
     off: "none", minimal: "minimal", low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: null,
   });
-  const compat = models.get("poolside/laguna-m.1")?.compat as Record<string, unknown>;
+  const compat = models.get("poolside/laguna-xs-2.1")?.compat as Record<string, unknown>;
   assert.equal(compat.thinkingFormat, "openrouter");
   assert.equal(compat.maxTokensField, "max_completion_tokens");
 });
@@ -122,8 +126,8 @@ test("parses every model and uses live metadata", () => {
 test("keeps known metadata when /models returns the basic OpenAI shape", () => {
   const [model] = parseModelsResponse({ data: [{ id: "poolside/laguna-s-2.1" }] });
   assert.equal(model?.name, "Laguna S 2.1");
-  assert.equal(model?.contextWindow, 1_048_576);
-  assert.equal(model?.maxTokens, 131_072);
+  assert.equal(model?.contextWindow, 262_144);
+  assert.equal(model?.maxTokens, 32_768);
   assert.equal(model?.reasoning, true);
   assert.equal(model?.cost.input, 0);
 });
