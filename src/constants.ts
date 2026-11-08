@@ -36,7 +36,12 @@ const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as const;
 /** Chat entries of pi's discriminated extension model config. */
 export type ChatModelConfig = Extract<ProviderModelConfig, { type?: "chat" }>;
 
-/** Current Poolside Platform models, available before authenticated refresh. */
+/**
+ * Current Poolside Platform models, available before authenticated refresh.
+ * Live-served limits verified 2026-11-09: both Laguna models advertise a
+ * 262,144-token context (the earlier 1M S-2.1 context no longer appears in
+ * the served catalog) and 32,768 max completion tokens.
+ */
 export const FALLBACK_MODELS: ChatModelConfig[] = [
   {
     id: "poolside/laguna-s-2.1",
@@ -44,20 +49,9 @@ export const FALLBACK_MODELS: ChatModelConfig[] = [
     reasoning: true,
     input: ["text"],
     cost: ZERO_COST,
-    contextWindow: 1_048_576,
-    maxTokens: 131_072,
-    thinkingLevelMap: MAX_ONLY_THINKING_LEVELS,
-    compat: POOLSIDE_COMPAT,
-  },
-  {
-    id: "poolside/laguna-m.1",
-    name: "Laguna M.1",
-    reasoning: true,
-    input: ["text"],
-    cost: ZERO_COST,
     contextWindow: 262_144,
     maxTokens: 32_768,
-    thinkingLevelMap: STANDARD_THINKING_LEVELS,
+    thinkingLevelMap: MAX_ONLY_THINKING_LEVELS,
     compat: POOLSIDE_COMPAT,
   },
   {
